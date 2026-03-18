@@ -21,6 +21,7 @@ export default function AdminPage() {
   const [publishing, setPublishing] = useState(false)
   const [published, setPublished] = useState(null)
   const [aiAlerts, setAiAlerts] = useState(null)
+  const [editedAlerts, setEditedAlerts] = useState(null)
   const [generatingAi, setGeneratingAi] = useState(false)
 
   const [revisions, setRevisions] = useState([])
@@ -88,6 +89,7 @@ export default function AdminPage() {
       const result = parseSpreadsheet(XLSX, buffer)
       setParseResult(result)
       setAiAlerts(null)
+      setEditedAlerts(null)
     } catch (err) {
       setParseResult({ data: null, errors: [`Parse error: ${err.message}`], summary: null })
     }
@@ -150,8 +152,8 @@ export default function AdminPage() {
     }
     const fullData = { deals: parseResult.data.deals, nurture: parseResult.data.nurture, meta: mergedMeta }
 
-    // Use AI alerts if generated, otherwise fall back to rule-based
-    mergedMeta.alerts = aiAlerts || generateAlerts(fullData)
+    // Use edited alerts > AI alerts > rule-based, in priority order
+    mergedMeta.alerts = editedAlerts || aiAlerts || generateAlerts(fullData)
 
     const payload = fullData
 
@@ -429,45 +431,122 @@ export default function AdminPage() {
                   scorecardRev: parseResult.data.meta.scorecardRev || defaults.meta.scorecardRev,
                 }
                 const ruleAlerts = generateAlerts({ deals: parseResult.data.deals, nurture: parseResult.data.nurture, meta: previewMeta })
-                const displayAlerts = aiAlerts || ruleAlerts
+                const displayAlerts = editedAlerts || aiAlerts || ruleAlerts
                 const alertColors = { pos: { bg: "#EAF3DE", fg: "#27500A", dot: GREEN }, warn: { bg: "#FAEEDA", fg: "#633806", dot: AMBER }, neutral: { bg: "#f8f7f4", fg: "#444441", dot: GRAY_M } }
-                return displayAlerts.length > 0 ? (
+                const typeLabels = { pos: "Positive", warn: "Warning", neutral: "Neutral" }
+                const typeOrder = ["pos", "warn", "neutral"]
+
+                const startEditing = () => setEditedAlerts([...displayAlerts])
+                const isEditing = editedAlerts !== null
+
+                const updateAlert = (idx, field, value) => {
+                  setEditedAlerts(prev => prev.map((a, i) => i === idx ? { ...a, [field]: value } : a))
+                }
+                const removeAlert = (idx) => {
+                  setEditedAlerts(prev => prev.filter((_, i) => i !== idx))
+                }
+                const moveAlert = (idx, dir) => {
+                  setEditedAlerts(prev => {
+                    const arr = [...prev]
+                    const target = idx + dir
+                    if (target < 0 || target >= arr.length) return arr
+                    const temp = arr[target]
+                    arr[target] = arr[idx]
+                    arr[idx] = temp
+                    return arr
+                  })
+                }
+                const addAlert = () => {
+                  setEditedAlerts(prev => [...(prev || []), { type: "neutral", text: "" }])
+                }
+
+                return (
                   <div style={{ marginBottom: 20 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                       <div style={{ fontSize: 12, fontWeight: 500, color: GRAY_M, textTransform: "uppercase" }}>
-                        Committee Alerts {aiAlerts ? "(AI-enhanced)" : "(rule-based)"}
+                        Committee Alerts {isEditing ? "(editing)" : aiAlerts ? "(AI-enhanced)" : "(rule-based)"}
                       </div>
                       <div style={{ display: "flex", gap: 8 }}>
-                        {aiAlerts && (
+                        {(aiAlerts || editedAlerts) && (
                           <button
-                            onClick={() => setAiAlerts(null)}
+                            onClick={() => { setAiAlerts(null); setEditedAlerts(null) }}
                             style={{ fontSize: 11, color: GRAY_M, background: "none", border: "1px solid #d3d1c7", borderRadius: 4, padding: "3px 10px", cursor: "pointer" }}
                           >
                             Reset to rules
                           </button>
                         )}
+                        {!isEditing && (
+                          <button
+                            onClick={startEditing}
+                            style={{ fontSize: 11, color: BLUE, background: "none", border: `1px solid ${BLUE}`, borderRadius: 4, padding: "3px 10px", cursor: "pointer" }}
+                          >
+                            Edit
+                          </button>
+                        )}
                         <button
-                          onClick={handleGenerateAiAlerts}
+                          onClick={() => { handleGenerateAiAlerts(); setEditedAlerts(null) }}
                           disabled={generatingAi}
                           style={{ fontSize: 11, color: "#fff", background: generatingAi ? GRAY_M : "#534AB7", border: "none", borderRadius: 4, padding: "3px 10px", cursor: generatingAi ? "wait" : "pointer" }}
                         >
-                          {generatingAi ? "Generating..." : aiAlerts ? "Regenerate with AI" : "Enhance with AI"}
+                          {generatingAi ? "Generating..." : aiAlerts ? "Regenerate AI" : "Enhance with AI"}
                         </button>
                       </div>
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {displayAlerts.map((a, i) => {
-                        const c = alertColors[a.type] || alertColors.neutral
-                        return (
-                          <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", background: c.bg, borderRadius: 6, padding: "8px 12px" }}>
-                            <div style={{ width: 6, height: 6, borderRadius: "50%", background: c.dot, marginTop: 5, flexShrink: 0 }} />
-                            <div style={{ fontSize: 12, color: c.fg, lineHeight: 1.5 }}>{a.text}</div>
-                          </div>
-                        )
-                      })}
-                    </div>
+
+                    {isEditing ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {editedAlerts.map((a, i) => {
+                          const c = alertColors[a.type] || alertColors.neutral
+                          return (
+                            <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", background: c.bg, borderRadius: 6, padding: "8px 10px" }}>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 2, flexShrink: 0, marginTop: 2 }}>
+                                <button onClick={() => moveAlert(i, -1)} disabled={i === 0} style={{ fontSize: 10, background: "none", border: "none", cursor: i === 0 ? "default" : "pointer", opacity: i === 0 ? 0.3 : 1, padding: 0, lineHeight: 1 }}>▲</button>
+                                <button onClick={() => moveAlert(i, 1)} disabled={i === editedAlerts.length - 1} style={{ fontSize: 10, background: "none", border: "none", cursor: i === editedAlerts.length - 1 ? "default" : "pointer", opacity: i === editedAlerts.length - 1 ? 0.3 : 1, padding: 0, lineHeight: 1 }}>▼</button>
+                              </div>
+                              <select
+                                value={a.type}
+                                onChange={(e) => updateAlert(i, "type", e.target.value)}
+                                style={{ fontSize: 11, border: "1px solid #d3d1c7", borderRadius: 4, padding: "3px 4px", background: "#fff", fontFamily: "inherit", flexShrink: 0 }}
+                              >
+                                {typeOrder.map((t) => <option key={t} value={t}>{typeLabels[t]}</option>)}
+                              </select>
+                              <input
+                                type="text"
+                                value={a.text}
+                                onChange={(e) => updateAlert(i, "text", e.target.value)}
+                                style={{ flex: 1, fontSize: 12, border: "1px solid #d3d1c7", borderRadius: 4, padding: "4px 8px", fontFamily: "inherit", lineHeight: 1.4 }}
+                              />
+                              <button
+                                onClick={() => removeAlert(i)}
+                                style={{ fontSize: 12, color: RED, background: "none", border: "none", cursor: "pointer", padding: "2px 4px", flexShrink: 0 }}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          )
+                        })}
+                        <button
+                          onClick={addAlert}
+                          style={{ fontSize: 12, color: BLUE, background: "none", border: `1px dashed ${BLUE}`, borderRadius: 6, padding: "6px 12px", cursor: "pointer", marginTop: 4 }}
+                        >
+                          + Add alert
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {displayAlerts.map((a, i) => {
+                          const c = alertColors[a.type] || alertColors.neutral
+                          return (
+                            <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", background: c.bg, borderRadius: 6, padding: "8px 12px" }}>
+                              <div style={{ width: 6, height: 6, borderRadius: "50%", background: c.dot, marginTop: 5, flexShrink: 0 }} />
+                              <div style={{ fontSize: 12, color: c.fg, lineHeight: 1.5 }}>{a.text}</div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
-                ) : null
+                )
               })()}
 
               <div style={{ marginTop: 16, marginBottom: 8 }}>
