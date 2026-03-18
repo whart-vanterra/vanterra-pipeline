@@ -1,7 +1,7 @@
 import "./globals.css"
 
 export const metadata = {
-  title: "Vanterra Capital — M&A Pipeline",
+  title: "Vanterra Foundations — M&A Pipeline",
   description: "M&A Committee report dashboard",
 }
 

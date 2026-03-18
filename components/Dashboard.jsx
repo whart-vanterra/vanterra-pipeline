@@ -522,7 +522,7 @@ export default function Dashboard({ data, role, onLogout }) {
     <div style={{ fontFamily: "var(--font-sans)", maxWidth: 1060, margin: "0 auto", padding: "1.5rem 1rem 3rem" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
         <div>
-          <div style={{ fontSize: 11, color: GRAY_M, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 4 }}>Vanterra Capital</div>
+          <div style={{ fontSize: 11, color: GRAY_M, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 4 }}>Vanterra Foundations</div>
           <h1 style={{ fontSize: 22, fontWeight: 500, margin: 0 }}>M&A Committee report</h1>
         </div>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>

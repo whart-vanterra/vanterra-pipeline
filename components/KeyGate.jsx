@@ -76,7 +76,7 @@ export default function KeyGate({ children }) {
     return (
       <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh", fontFamily: "var(--font-sans)" }}>
         <form onSubmit={handleSubmit} style={{ background: "#f8f7f4", borderRadius: 12, padding: 32, width: 360, textAlign: "center" }}>
-          <div style={{ fontSize: 11, color: "#888780", letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 4 }}>Vanterra Capital</div>
+          <div style={{ fontSize: 11, color: "#888780", letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 4 }}>Vanterra Foundations</div>
           <h1 style={{ fontSize: 20, fontWeight: 500, margin: "0 0 24px" }}>M&A Pipeline</h1>
           <input
             type="text"

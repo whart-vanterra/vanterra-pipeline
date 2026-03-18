@@ -213,7 +213,7 @@ export default function AdminPage() {
           onSubmit={(e) => { e.preventDefault(); checkAuth(inputKey.trim()) }}
           style={{ background: "#f8f7f4", borderRadius: 12, padding: 32, width: 360, textAlign: "center" }}
         >
-          <div style={{ fontSize: 11, color: GRAY_M, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 4 }}>Vanterra Capital</div>
+          <div style={{ fontSize: 11, color: GRAY_M, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 4 }}>Vanterra Foundations</div>
           <h1 style={{ fontSize: 20, fontWeight: 500, margin: "0 0 24px" }}>Admin Access</h1>
           <input
             type="text"
@@ -253,7 +253,7 @@ export default function AdminPage() {
     <div style={{ fontFamily: "var(--font-sans)", maxWidth: 900, margin: "0 auto", padding: "2rem 1rem" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
         <div>
-          <div style={{ fontSize: 11, color: GRAY_M, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 4 }}>Vanterra Capital</div>
+          <div style={{ fontSize: 11, color: GRAY_M, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 4 }}>Vanterra Foundations</div>
           <h1 style={{ fontSize: 20, fontWeight: 500, margin: 0 }}>Pipeline Admin</h1>
         </div>
         <a href="/" style={{ fontSize: 12, color: BLUE, textDecoration: "none", padding: "6px 14px", border: `1px solid ${BLUE}`, borderRadius: 6 }}>Dashboard</a>
