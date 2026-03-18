@@ -1,6 +1,7 @@
 "use client"
 import { useState, useEffect } from "react"
 import { getDefaultData } from "../../lib/data"
+import { generateAlerts } from "../../lib/alerts"
 
 const BLUE = "#185FA5"
 const GREEN = "#3B6D11"
@@ -96,19 +97,20 @@ export default function AdminPage() {
 
     // Merge parsed data with defaults for any missing fields
     const defaults = getDefaultData()
-    const payload = {
-      deals: parseResult.data.deals,
-      nurture: parseResult.data.nurture,
-      meta: {
-        ...defaults.meta,
-        ...parseResult.data.meta,
-        budgetData: parseResult.data.meta.budgetData || defaults.meta.budgetData,
-        alerts: parseResult.data.meta.alerts || defaults.meta.alerts,
-        ntm: parseResult.data.meta.ntm || defaults.meta.ntm,
-        scorecardVol: parseResult.data.meta.scorecardVol || defaults.meta.scorecardVol,
-        scorecardRev: parseResult.data.meta.scorecardRev || defaults.meta.scorecardRev,
-      },
+    const mergedMeta = {
+      ...defaults.meta,
+      ...parseResult.data.meta,
+      budgetData: parseResult.data.meta.budgetData || defaults.meta.budgetData,
+      ntm: parseResult.data.meta.ntm || defaults.meta.ntm,
+      scorecardVol: parseResult.data.meta.scorecardVol || defaults.meta.scorecardVol,
+      scorecardRev: parseResult.data.meta.scorecardRev || defaults.meta.scorecardRev,
     }
+    const fullData = { deals: parseResult.data.deals, nurture: parseResult.data.nurture, meta: mergedMeta }
+
+    // Auto-generate committee attention items from the data
+    mergedMeta.alerts = generateAlerts(fullData)
+
+    const payload = fullData
 
     payload.label = publishLabel || `Upload ${new Date().toLocaleDateString()}`
 
@@ -373,6 +375,35 @@ export default function AdminPage() {
                   )}
                 </>
               )}
+
+              {parseResult.data && (() => {
+                const defaults = getDefaultData()
+                const previewMeta = {
+                  ...defaults.meta,
+                  ...parseResult.data.meta,
+                  budgetData: parseResult.data.meta.budgetData || defaults.meta.budgetData,
+                  scorecardVol: parseResult.data.meta.scorecardVol || defaults.meta.scorecardVol,
+                  scorecardRev: parseResult.data.meta.scorecardRev || defaults.meta.scorecardRev,
+                }
+                const previewAlerts = generateAlerts({ deals: parseResult.data.deals, nurture: parseResult.data.nurture, meta: previewMeta })
+                const alertColors = { pos: { bg: "#EAF3DE", fg: "#27500A", dot: GREEN }, warn: { bg: "#FAEEDA", fg: "#633806", dot: AMBER }, neutral: { bg: "#f8f7f4", fg: "#444441", dot: GRAY_M } }
+                return previewAlerts.length > 0 ? (
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: GRAY_M, textTransform: "uppercase", marginBottom: 8 }}>Auto-generated Committee Alerts</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {previewAlerts.map((a, i) => {
+                        const c = alertColors[a.type] || alertColors.neutral
+                        return (
+                          <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", background: c.bg, borderRadius: 6, padding: "8px 12px" }}>
+                            <div style={{ width: 6, height: 6, borderRadius: "50%", background: c.dot, marginTop: 5, flexShrink: 0 }} />
+                            <div style={{ fontSize: 12, color: c.fg, lineHeight: 1.5 }}>{a.text}</div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ) : null
+              })()}
 
               <div style={{ marginTop: 16, marginBottom: 8 }}>
                 <label style={{ fontSize: 12, fontWeight: 500, color: GRAY_M, display: "block", marginBottom: 6 }}>Revision label (optional)</label>
