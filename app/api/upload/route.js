@@ -94,8 +94,8 @@ export async function POST(request) {
 
     return NextResponse.json({ success: true, timestamp })
   } catch (err) {
-    console.error("Blob upload error:", err.message)
-    return NextResponse.json({ error: "Failed to save data" }, { status: 500 })
+    console.error("Blob upload error:", err.message, err.stack)
+    return NextResponse.json({ error: `Failed to save data: ${err.message}` }, { status: 500 })
   }
 }
 
