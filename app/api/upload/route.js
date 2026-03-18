@@ -56,6 +56,7 @@ export async function POST(request) {
     await put("data.json", JSON.stringify(data), {
       access: "private",
       addRandomSuffix: false,
+      allowOverwrite: true,
       token: blobToken,
     })
 
@@ -71,6 +72,7 @@ export async function POST(request) {
       await put(replaceRevision, JSON.stringify(envelope), {
         access: "private",
         addRandomSuffix: false,
+      allowOverwrite: true,
         token: blobToken,
       })
     } else {
@@ -78,6 +80,7 @@ export async function POST(request) {
       await put(`revisions/${timestamp}.json`, JSON.stringify(envelope), {
         access: "private",
         addRandomSuffix: false,
+      allowOverwrite: true,
         token: blobToken,
       })
 
