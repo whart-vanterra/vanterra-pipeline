@@ -21,6 +21,7 @@ export default function AdminPage() {
   const [published, setPublished] = useState(null)
 
   const [revisions, setRevisions] = useState([])
+  const [activeRevision, setActiveRevision] = useState(null)
   const [rollingBack, setRollingBack] = useState(false)
   const [editingLabel, setEditingLabel] = useState(null)
   const [editLabelValue, setEditLabelValue] = useState("")
@@ -63,6 +64,7 @@ export default function AdminPage() {
       if (res.ok) {
         const data = await res.json()
         setRevisions(data.revisions || [])
+        setActiveRevision(data.activeRevision || null)
       }
     } catch { /* ignore */ }
   }
@@ -146,7 +148,7 @@ export default function AdminPage() {
       const uploadRes = await fetch("/api/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-        body: JSON.stringify({ ...revData, restoreOnly: true }),
+        body: JSON.stringify({ ...revData, restoreOnly: true, activePathname: pathname }),
       })
       if (uploadRes.ok) {
         setPublished(new Date().toISOString())
@@ -421,7 +423,7 @@ export default function AdminPage() {
                     <div style={{ flex: 1 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <span style={{ fontSize: 13, fontWeight: 500 }}>{new Date(rev.timestamp).toLocaleString()}</span>
-                        {i === 0 && <span style={{ fontSize: 11, color: GREEN, fontWeight: 500, background: "#EAF3DE", padding: "2px 8px", borderRadius: 4 }}>Current</span>}
+                        {(activeRevision ? rev.pathname === activeRevision : i === 0) && <span style={{ fontSize: 11, color: GREEN, fontWeight: 500, background: "#EAF3DE", padding: "2px 8px", borderRadius: 4 }}>Live</span>}
                         <span style={{ fontSize: 12, color: GRAY_M }}>{(rev.size / 1024).toFixed(1)} KB</span>
                       </div>
                       {editingLabel === rev.pathname ? (
@@ -453,7 +455,7 @@ export default function AdminPage() {
                       )}
                     </div>
                     <div style={{ display: "flex", gap: 8, marginLeft: 12 }}>
-                      {i > 0 && (
+                      {!(activeRevision ? rev.pathname === activeRevision : i === 0) && (
                         <button
                           onClick={() => handleRollback(rev.pathname)}
                           disabled={rollingBack}
@@ -462,23 +464,25 @@ export default function AdminPage() {
                           Restore
                         </button>
                       )}
-                      <button
-                        onClick={() => handleDelete(rev.pathname)}
-                        disabled={deleting === rev.pathname || i === 0}
-                        style={{
-                          padding: "6px 14px",
-                          background: "transparent",
-                          border: `1px solid ${i === 0 ? "#d3d1c7" : RED}`,
-                          color: i === 0 ? "#d3d1c7" : RED,
-                          borderRadius: 6,
-                          fontSize: 12,
-                          cursor: i === 0 ? "not-allowed" : "pointer",
-                          opacity: deleting === rev.pathname ? 0.6 : 1,
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        Delete
-                      </button>
+                      {!(activeRevision ? rev.pathname === activeRevision : i === 0) && (
+                        <button
+                          onClick={() => handleDelete(rev.pathname)}
+                          disabled={deleting === rev.pathname}
+                          style={{
+                            padding: "6px 14px",
+                            background: "transparent",
+                            border: `1px solid ${RED}`,
+                            color: RED,
+                            borderRadius: 6,
+                            fontSize: 12,
+                            cursor: "pointer",
+                            opacity: deleting === rev.pathname ? 0.6 : 1,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          Delete
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

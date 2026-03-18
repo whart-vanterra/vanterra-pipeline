@@ -33,7 +33,7 @@ export async function POST(request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const { deals, nurture, meta, label, replaceRevision, restoreOnly } = body
+  const { deals, nurture, meta, label, replaceRevision, restoreOnly, activePathname } = body
   if (!deals || !Array.isArray(deals)) {
     return NextResponse.json({ error: "Missing or invalid deals array" }, { status: 400 })
   }
@@ -59,6 +59,17 @@ export async function POST(request) {
       allowOverwrite: true,
       token: blobToken,
     })
+
+    // Track which revision is live
+    const livePathname = restoreOnly ? activePathname : replaceRevision || `revisions/${timestamp}.json`
+    if (livePathname) {
+      await put("active-revision.txt", livePathname, {
+        access: "private",
+        addRandomSuffix: false,
+        allowOverwrite: true,
+        token: blobToken,
+      })
+    }
 
     // Restore just updates data.json — no new revision
     if (restoreOnly) {
@@ -165,7 +176,19 @@ export async function GET(request) {
           }
         })
     )
-    return NextResponse.json({ revisions })
+    // Read which revision is currently live
+    let activeRevision = null
+    try {
+      const { blobs: activeBlobs } = await list({ prefix: "active-revision.txt", limit: 1, token: blobToken })
+      if (activeBlobs.length > 0) {
+        const res = await fetch(activeBlobs[0].downloadUrl, {
+          headers: { Authorization: `Bearer ${blobToken}` },
+        })
+        if (res.ok) activeRevision = (await res.text()).trim()
+      }
+    } catch { /* ignore */ }
+
+    return NextResponse.json({ revisions, activeRevision })
   } catch (err) {
     console.error("List revisions error:", err.message)
     return NextResponse.json({ revisions: [] })
