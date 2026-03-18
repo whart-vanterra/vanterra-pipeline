@@ -76,7 +76,8 @@ export default function AdminPage() {
     setError(null)
 
     try {
-      const XLSX = (await import("xlsx")).default
+      const xlsxModule = await import("xlsx")
+      const XLSX = xlsxModule.default || xlsxModule
       const { parseSpreadsheet } = await import("../../lib/schema")
       const buffer = await f.arrayBuffer()
       const result = parseSpreadsheet(XLSX, buffer)
