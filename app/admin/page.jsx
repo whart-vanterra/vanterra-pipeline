@@ -20,6 +20,8 @@ export default function AdminPage() {
   const [publishLabel, setPublishLabel] = useState("")
   const [publishing, setPublishing] = useState(false)
   const [published, setPublished] = useState(null)
+  const [aiAlerts, setAiAlerts] = useState(null)
+  const [generatingAi, setGeneratingAi] = useState(false)
 
   const [revisions, setRevisions] = useState([])
   const [activeRevision, setActiveRevision] = useState(null)
@@ -85,8 +87,49 @@ export default function AdminPage() {
       const buffer = await f.arrayBuffer()
       const result = parseSpreadsheet(XLSX, buffer)
       setParseResult(result)
+      setAiAlerts(null)
     } catch (err) {
       setParseResult({ data: null, errors: [`Parse error: ${err.message}`], summary: null })
+    }
+  }
+
+  async function handleGenerateAiAlerts() {
+    if (!parseResult?.data) return
+    setGeneratingAi(true)
+    setError(null)
+
+    const defaults = getDefaultData()
+    const previewMeta = {
+      ...defaults.meta,
+      ...parseResult.data.meta,
+      budgetData: parseResult.data.meta.budgetData || defaults.meta.budgetData,
+      scorecardVol: parseResult.data.meta.scorecardVol || defaults.meta.scorecardVol,
+      scorecardRev: parseResult.data.meta.scorecardRev || defaults.meta.scorecardRev,
+    }
+    const ruleAlerts = generateAlerts({ deals: parseResult.data.deals, nurture: parseResult.data.nurture, meta: previewMeta })
+
+    try {
+      const res = await fetch("/api/alerts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        body: JSON.stringify({
+          deals: parseResult.data.deals,
+          nurture: parseResult.data.nurture,
+          meta: previewMeta,
+          ruleAlerts,
+        }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setAiAlerts(data.alerts)
+      } else {
+        const data = await res.json()
+        setError(data.error || "AI generation failed — using rule-based alerts")
+      }
+    } catch (err) {
+      setError(`AI generation failed: ${err.message}`)
+    } finally {
+      setGeneratingAi(false)
     }
   }
 
@@ -107,8 +150,8 @@ export default function AdminPage() {
     }
     const fullData = { deals: parseResult.data.deals, nurture: parseResult.data.nurture, meta: mergedMeta }
 
-    // Auto-generate committee attention items from the data
-    mergedMeta.alerts = generateAlerts(fullData)
+    // Use AI alerts if generated, otherwise fall back to rule-based
+    mergedMeta.alerts = aiAlerts || generateAlerts(fullData)
 
     const payload = fullData
 
@@ -385,13 +428,35 @@ export default function AdminPage() {
                   scorecardVol: parseResult.data.meta.scorecardVol || defaults.meta.scorecardVol,
                   scorecardRev: parseResult.data.meta.scorecardRev || defaults.meta.scorecardRev,
                 }
-                const previewAlerts = generateAlerts({ deals: parseResult.data.deals, nurture: parseResult.data.nurture, meta: previewMeta })
+                const ruleAlerts = generateAlerts({ deals: parseResult.data.deals, nurture: parseResult.data.nurture, meta: previewMeta })
+                const displayAlerts = aiAlerts || ruleAlerts
                 const alertColors = { pos: { bg: "#EAF3DE", fg: "#27500A", dot: GREEN }, warn: { bg: "#FAEEDA", fg: "#633806", dot: AMBER }, neutral: { bg: "#f8f7f4", fg: "#444441", dot: GRAY_M } }
-                return previewAlerts.length > 0 ? (
+                return displayAlerts.length > 0 ? (
                   <div style={{ marginBottom: 20 }}>
-                    <div style={{ fontSize: 12, fontWeight: 500, color: GRAY_M, textTransform: "uppercase", marginBottom: 8 }}>Auto-generated Committee Alerts</div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: GRAY_M, textTransform: "uppercase" }}>
+                        Committee Alerts {aiAlerts ? "(AI-enhanced)" : "(rule-based)"}
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        {aiAlerts && (
+                          <button
+                            onClick={() => setAiAlerts(null)}
+                            style={{ fontSize: 11, color: GRAY_M, background: "none", border: "1px solid #d3d1c7", borderRadius: 4, padding: "3px 10px", cursor: "pointer" }}
+                          >
+                            Reset to rules
+                          </button>
+                        )}
+                        <button
+                          onClick={handleGenerateAiAlerts}
+                          disabled={generatingAi}
+                          style={{ fontSize: 11, color: "#fff", background: generatingAi ? GRAY_M : "#534AB7", border: "none", borderRadius: 4, padding: "3px 10px", cursor: generatingAi ? "wait" : "pointer" }}
+                        >
+                          {generatingAi ? "Generating..." : aiAlerts ? "Regenerate with AI" : "Enhance with AI"}
+                        </button>
+                      </div>
+                    </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {previewAlerts.map((a, i) => {
+                      {displayAlerts.map((a, i) => {
                         const c = alertColors[a.type] || alertColors.neutral
                         return (
                           <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", background: c.bg, borderRadius: 6, padding: "8px 12px" }}>
