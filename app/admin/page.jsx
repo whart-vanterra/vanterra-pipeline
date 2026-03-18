@@ -16,11 +16,15 @@ export default function AdminPage() {
 
   const [file, setFile] = useState(null)
   const [parseResult, setParseResult] = useState(null)
+  const [publishLabel, setPublishLabel] = useState("")
   const [publishing, setPublishing] = useState(false)
   const [published, setPublished] = useState(null)
 
   const [revisions, setRevisions] = useState([])
   const [rollingBack, setRollingBack] = useState(false)
+  const [editingLabel, setEditingLabel] = useState(null)
+  const [editLabelValue, setEditLabelValue] = useState("")
+  const [deleting, setDeleting] = useState(null)
 
   const [activeTab, setActiveTab] = useState("upload")
 
@@ -103,6 +107,8 @@ export default function AdminPage() {
       },
     }
 
+    payload.label = publishLabel || `Upload ${new Date().toLocaleDateString()}`
+
     try {
       const res = await fetch("/api/upload", {
         method: "POST",
@@ -112,6 +118,7 @@ export default function AdminPage() {
       if (res.ok) {
         const data = await res.json()
         setPublished(data.timestamp)
+        setPublishLabel("")
         fetchRevisions(key)
       } else {
         const data = await res.json()
@@ -130,11 +137,13 @@ export default function AdminPage() {
     try {
       const res = await fetch(revisionUrl)
       if (!res.ok) throw new Error("Failed to fetch revision")
-      const data = await res.json()
+      const envelope = await res.json()
+      // Envelope format: { data, label, timestamp } — extract data
+      const revData = envelope.data || envelope
       const uploadRes = await fetch("/api/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...revData, label: `Rollback: ${envelope.label || "unnamed"}` }),
       })
       if (uploadRes.ok) {
         setPublished(new Date().toISOString())
@@ -147,6 +156,53 @@ export default function AdminPage() {
       setError(`Rollback failed: ${err.message}`)
     } finally {
       setRollingBack(false)
+    }
+  }
+
+  async function handleDelete(pathname) {
+    if (!confirm("Delete this revision? This cannot be undone.")) return
+    setDeleting(pathname)
+    setError(null)
+    try {
+      const res = await fetch(`/api/upload?pathname=${encodeURIComponent(pathname)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${key}` },
+      })
+      if (res.ok) {
+        fetchRevisions(key)
+      } else {
+        const data = await res.json()
+        setError(data.error || "Delete failed")
+      }
+    } catch (err) {
+      setError(`Delete failed: ${err.message}`)
+    } finally {
+      setDeleting(null)
+    }
+  }
+
+  async function handleUpdateLabel(revisionUrl, pathname) {
+    setError(null)
+    try {
+      // Fetch current revision, update label, re-save to same path
+      const res = await fetch(revisionUrl)
+      if (!res.ok) throw new Error("Failed to fetch revision")
+      const envelope = await res.json()
+      const revData = envelope.data || envelope
+      const uploadRes = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        body: JSON.stringify({ ...revData, label: editLabelValue, replaceRevision: pathname }),
+      })
+      if (uploadRes.ok) {
+        setEditingLabel(null)
+        fetchRevisions(key)
+      } else {
+        const data = await uploadRes.json()
+        setError(data.error || "Label update failed")
+      }
+    } catch (err) {
+      setError(`Label update failed: ${err.message}`)
     }
   }
 
@@ -312,6 +368,16 @@ export default function AdminPage() {
                 </>
               )}
 
+              <div style={{ marginTop: 16, marginBottom: 8 }}>
+                <label style={{ fontSize: 12, fontWeight: 500, color: GRAY_M, display: "block", marginBottom: 6 }}>Revision label (optional)</label>
+                <input
+                  type="text"
+                  value={publishLabel}
+                  onChange={(e) => setPublishLabel(e.target.value)}
+                  placeholder="e.g. March weekly update, Fixed Boccia revenue"
+                  style={{ width: "100%", maxWidth: 400, padding: "8px 12px", border: "1px solid #d3d1c7", borderRadius: 6, fontSize: 13, fontFamily: "inherit" }}
+                />
+              </div>
               <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
                 <button
                   onClick={handlePublish}
@@ -346,25 +412,76 @@ export default function AdminPage() {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {revisions.map((rev, i) => (
-                <div key={rev.pathname} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "#f8f7f4", borderRadius: 8 }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 500 }}>{new Date(rev.timestamp).toLocaleString()}</div>
-                    <div style={{ fontSize: 12, color: GRAY_M }}>{(rev.size / 1024).toFixed(1)} KB</div>
-                  </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    {i > 0 && (
+                <div key={rev.pathname} style={{ padding: "12px 16px", background: "#f8f7f4", borderRadius: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 13, fontWeight: 500 }}>{new Date(rev.timestamp).toLocaleString()}</span>
+                        {i === 0 && <span style={{ fontSize: 11, color: GREEN, fontWeight: 500, background: "#EAF3DE", padding: "2px 8px", borderRadius: 4 }}>Current</span>}
+                        <span style={{ fontSize: 12, color: GRAY_M }}>{(rev.size / 1024).toFixed(1)} KB</span>
+                      </div>
+                      {editingLabel === rev.pathname ? (
+                        <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                          <input
+                            type="text"
+                            value={editLabelValue}
+                            onChange={(e) => setEditLabelValue(e.target.value)}
+                            placeholder="Enter label"
+                            autoFocus
+                            style={{ flex: 1, maxWidth: 300, padding: "4px 8px", border: "1px solid #d3d1c7", borderRadius: 4, fontSize: 12, fontFamily: "inherit" }}
+                            onKeyDown={(e) => { if (e.key === "Enter") handleUpdateLabel(rev.url, rev.pathname); if (e.key === "Escape") setEditingLabel(null) }}
+                          />
+                          <button onClick={() => handleUpdateLabel(rev.url, rev.pathname)} style={{ padding: "4px 10px", background: BLUE, color: "#fff", border: "none", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>Save</button>
+                          <button onClick={() => setEditingLabel(null)} style={{ padding: "4px 10px", background: "transparent", border: "1px solid #d3d1c7", borderRadius: 4, fontSize: 12, cursor: "pointer", color: GRAY_M }}>Cancel</button>
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
+                          <span style={{ fontSize: 12, color: rev.label ? "var(--color-text-primary)" : GRAY_M, fontStyle: rev.label ? "normal" : "italic" }}>
+                            {rev.label || "No label"}
+                          </span>
+                          <button
+                            onClick={() => { setEditingLabel(rev.pathname); setEditLabelValue(rev.label || "") }}
+                            style={{ fontSize: 11, color: BLUE, background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}
+                          >
+                            edit
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", gap: 8, marginLeft: 12 }}>
+                      {i > 0 && (
+                        <button
+                          onClick={() => handleRollback(rev.url)}
+                          disabled={rollingBack}
+                          style={{ padding: "6px 14px", background: "transparent", border: `1px solid ${BLUE}`, color: BLUE, borderRadius: 6, fontSize: 12, cursor: "pointer", opacity: rollingBack ? 0.6 : 1, whiteSpace: "nowrap" }}
+                        >
+                          Restore
+                        </button>
+                      )}
                       <button
-                        onClick={() => handleRollback(rev.url)}
-                        disabled={rollingBack}
-                        style={{ padding: "6px 14px", background: "transparent", border: `1px solid ${BLUE}`, color: BLUE, borderRadius: 6, fontSize: 12, cursor: "pointer", opacity: rollingBack ? 0.6 : 1 }}
+                        onClick={() => handleDelete(rev.pathname)}
+                        disabled={deleting === rev.pathname || i === 0}
+                        style={{
+                          padding: "6px 14px",
+                          background: "transparent",
+                          border: `1px solid ${i === 0 ? "#d3d1c7" : RED}`,
+                          color: i === 0 ? "#d3d1c7" : RED,
+                          borderRadius: 6,
+                          fontSize: 12,
+                          cursor: i === 0 ? "not-allowed" : "pointer",
+                          opacity: deleting === rev.pathname ? 0.6 : 1,
+                          whiteSpace: "nowrap",
+                        }}
                       >
-                        {rollingBack ? "Rolling back..." : "Rollback"}
+                        Delete
                       </button>
-                    )}
-                    {i === 0 && <span style={{ fontSize: 12, color: GREEN, fontWeight: 500, padding: "6px 14px" }}>Current</span>}
+                    </div>
                   </div>
                 </div>
               ))}
+              <div style={{ fontSize: 12, color: GRAY_M, padding: "8px 0" }}>
+                Keeping up to 52 revisions. Oldest are auto-removed on new uploads.
+              </div>
             </div>
           )}
         </div>
