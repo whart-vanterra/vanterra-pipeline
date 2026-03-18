@@ -1,12 +1,12 @@
 "use client"
-import { useState, useEffect, useCallback } from "react"
-import { dealsColumns, nurtureColumns, parseSheetRow, validateDeals, validateNurture } from "../../lib/schema"
+import { useState, useEffect } from "react"
 import { getDefaultData } from "../../lib/data"
 
 const BLUE = "#185FA5"
 const GREEN = "#3B6D11"
 const RED = "#A32D2D"
 const GRAY_M = "#888780"
+const AMBER = "#854F0B"
 
 export default function AdminPage() {
   const [key, setKey] = useState("")
@@ -15,9 +15,7 @@ export default function AdminPage() {
   const [error, setError] = useState(null)
 
   const [file, setFile] = useState(null)
-  const [parsedDeals, setParsedDeals] = useState(null)
-  const [parsedNurture, setParsedNurture] = useState(null)
-  const [parseErrors, setParseErrors] = useState([])
+  const [parseResult, setParseResult] = useState(null)
   const [publishing, setPublishing] = useState(false)
   const [published, setPublished] = useState(null)
 
@@ -31,9 +29,7 @@ export default function AdminPage() {
     const urlKey = params.get("key")
     const savedKey = localStorage.getItem("vanterra-pipeline-key")
     const k = urlKey || savedKey
-    if (k) {
-      checkAuth(k)
-    }
+    if (k) checkAuth(k)
   }, [])
 
   async function checkAuth(k) {
@@ -64,68 +60,53 @@ export default function AdminPage() {
         const data = await res.json()
         setRevisions(data.revisions || [])
       }
-    } catch {
-      // ignore
-    }
+    } catch { /* ignore */ }
   }
 
   async function handleFile(e) {
     const f = e.target.files?.[0]
     if (!f) return
     setFile(f)
-    setParsedDeals(null)
-    setParsedNurture(null)
-    setParseErrors([])
+    setParseResult(null)
     setPublished(null)
+    setError(null)
 
     try {
       const XLSX = (await import("xlsx")).default
+      const { parseSpreadsheet } = await import("../../lib/schema")
       const buffer = await f.arrayBuffer()
-      const wb = XLSX.read(buffer, { type: "array" })
-
-      const dealsSheet = wb.Sheets["Deals"] || wb.Sheets["Active Pipeline"] || wb.Sheets[wb.SheetNames[0]]
-      const nurtureSheet = wb.Sheets["Nurture"] || wb.Sheets["Nurture Tracker"] || wb.Sheets[wb.SheetNames[1]]
-
-      if (!dealsSheet) {
-        setParseErrors(["No 'Deals' sheet found"])
-        return
-      }
-
-      const dealsRaw = XLSX.utils.sheet_to_json(dealsSheet)
-      const nurtureRaw = nurtureSheet ? XLSX.utils.sheet_to_json(nurtureSheet) : []
-
-      const deals = dealsRaw.map((row) => parseSheetRow(row, dealsColumns))
-      const nurture = nurtureRaw.map((row) => parseSheetRow(row, nurtureColumns))
-
-      const errors = [...validateDeals(deals).map((e) => `Deals: ${e}`), ...validateNurture(nurture).map((e) => `Nurture: ${e}`)]
-
-      setParsedDeals(deals)
-      setParsedNurture(nurture)
-      setParseErrors(errors)
+      const result = parseSpreadsheet(XLSX, buffer)
+      setParseResult(result)
     } catch (err) {
-      setParseErrors([`Parse error: ${err.message}`])
+      setParseResult({ data: null, errors: [`Parse error: ${err.message}`], summary: null })
     }
   }
 
   async function handlePublish() {
-    if (!parsedDeals) return
+    if (!parseResult?.data) return
     setPublishing(true)
     setError(null)
 
-    const defaultData = getDefaultData()
+    // Merge parsed data with defaults for any missing fields
+    const defaults = getDefaultData()
     const payload = {
-      deals: parsedDeals,
-      nurture: parsedNurture || defaultData.nurture,
-      meta: defaultData.meta,
+      deals: parseResult.data.deals,
+      nurture: parseResult.data.nurture,
+      meta: {
+        ...defaults.meta,
+        ...parseResult.data.meta,
+        budgetData: parseResult.data.meta.budgetData || defaults.meta.budgetData,
+        alerts: parseResult.data.meta.alerts || defaults.meta.alerts,
+        ntm: parseResult.data.meta.ntm || defaults.meta.ntm,
+        scorecardVol: parseResult.data.meta.scorecardVol || defaults.meta.scorecardVol,
+        scorecardRev: parseResult.data.meta.scorecardRev || defaults.meta.scorecardRev,
+      },
     }
 
     try {
       const res = await fetch("/api/upload", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${key}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
         body: JSON.stringify(payload),
       })
       if (res.ok) {
@@ -150,13 +131,9 @@ export default function AdminPage() {
       const res = await fetch(revisionUrl)
       if (!res.ok) throw new Error("Failed to fetch revision")
       const data = await res.json()
-
       const uploadRes = await fetch("/api/upload", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${key}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
         body: JSON.stringify(data),
       })
       if (uploadRes.ok) {
@@ -212,6 +189,10 @@ export default function AdminPage() {
     fontFamily: "inherit",
   })
 
+  const hasErrors = parseResult?.errors?.some((e) => !e.startsWith("Warning:"))
+  const warnings = parseResult?.errors?.filter((e) => e.startsWith("Warning:")) || []
+  const hardErrors = parseResult?.errors?.filter((e) => !e.startsWith("Warning:")) || []
+
   return (
     <div style={{ fontFamily: "var(--font-sans)", maxWidth: 900, margin: "0 auto", padding: "2rem 1rem" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
@@ -219,14 +200,11 @@ export default function AdminPage() {
           <div style={{ fontSize: 11, color: GRAY_M, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 4 }}>Vanterra Capital</div>
           <h1 style={{ fontSize: 20, fontWeight: 500, margin: 0 }}>Pipeline Admin</h1>
         </div>
-        <div style={{ display: "flex", gap: 12 }}>
-          <a href="/" style={{ fontSize: 12, color: BLUE, textDecoration: "none", padding: "6px 14px", border: `1px solid ${BLUE}`, borderRadius: 6 }}>Dashboard</a>
-          <a href="/template.xlsx" download style={{ fontSize: 12, color: GREEN, textDecoration: "none", padding: "6px 14px", border: `1px solid ${GREEN}`, borderRadius: 6 }}>Download Template</a>
-        </div>
+        <a href="/" style={{ fontSize: 12, color: BLUE, textDecoration: "none", padding: "6px 14px", border: `1px solid ${BLUE}`, borderRadius: 6 }}>Dashboard</a>
       </div>
 
       <div style={{ display: "flex", borderBottom: "0.5px solid #e5e3db", marginBottom: 24 }}>
-        <button onClick={() => setActiveTab("upload")} style={tabStyle(activeTab === "upload")}>Upload Data</button>
+        <button onClick={() => setActiveTab("upload")} style={tabStyle(activeTab === "upload")}>Upload Spreadsheet</button>
         <button onClick={() => setActiveTab("revisions")} style={tabStyle(activeTab === "revisions")}>Revisions ({revisions.length})</button>
       </div>
 
@@ -236,72 +214,124 @@ export default function AdminPage() {
       {activeTab === "upload" && (
         <div>
           <div style={{ background: "#f8f7f4", borderRadius: 10, padding: 24, marginBottom: 24 }}>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 12 }}>Upload spreadsheet (.xlsx, .csv)</label>
-            <input
-              type="file"
-              accept=".xlsx,.csv,.xls"
-              onChange={handleFile}
-              style={{ fontSize: 13 }}
-            />
+            <label style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 8 }}>Upload Vanterra Pipeline spreadsheet</label>
+            <div style={{ fontSize: 12, color: GRAY_M, marginBottom: 12 }}>
+              Upload the working pipeline .xlsx file directly — the parser reads Pipeline Detail, KPIs, NTM Forecast, Budget, and Active Deals sheets.
+            </div>
+            <input type="file" accept=".xlsx,.xls" onChange={handleFile} style={{ fontSize: 13 }} />
           </div>
 
-          {parseErrors.length > 0 && (
+          {hardErrors.length > 0 && (
             <div style={{ background: "#FCEBEB", borderRadius: 8, padding: 16, marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 500, color: RED, marginBottom: 8 }}>Validation issues:</div>
-              {parseErrors.map((e, i) => <div key={i} style={{ fontSize: 12, color: RED, marginBottom: 4 }}>{e}</div>)}
+              <div style={{ fontSize: 13, fontWeight: 500, color: RED, marginBottom: 8 }}>Errors:</div>
+              {hardErrors.map((e, i) => <div key={i} style={{ fontSize: 12, color: RED, marginBottom: 4 }}>{e}</div>)}
             </div>
           )}
 
-          {parsedDeals && (
+          {warnings.length > 0 && (
+            <div style={{ background: "#FAEEDA", borderRadius: 8, padding: 16, marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: AMBER, marginBottom: 8 }}>Warnings (defaults will be used):</div>
+              {warnings.map((e, i) => <div key={i} style={{ fontSize: 12, color: AMBER, marginBottom: 4 }}>{e}</div>)}
+            </div>
+          )}
+
+          {parseResult?.summary && (
             <div>
-              <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 12 }}>
-                Preview: {parsedDeals.length} deals, {parsedNurture?.length || 0} nurture targets
+              <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 16 }}>Parse summary</div>
+
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>
+                {[
+                  { label: "Active Deals", value: parseResult.summary.deals, color: BLUE },
+                  { label: "Nurture Targets", value: parseResult.summary.nurture, color: GREEN },
+                  { label: "NTM Entries", value: parseResult.summary.ntm, color: BLUE },
+                  { label: "KPI Volume Rows", value: parseResult.summary.scorecardVol },
+                  { label: "KPI Revenue Rows", value: parseResult.summary.scorecardRev },
+                  { label: "Budget Months", value: parseResult.summary.budgetMonths },
+                ].map((s) => (
+                  <div key={s.label} style={{ background: "#f8f7f4", borderRadius: 8, padding: "10px 16px", minWidth: 100 }}>
+                    <div style={{ fontSize: 11, color: GRAY_M, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>{s.label}</div>
+                    <div style={{ fontSize: 22, fontWeight: 500, color: s.color || "var(--color-text-primary)" }}>{s.value}</div>
+                  </div>
+                ))}
               </div>
 
-              <div style={{ marginBottom: 24 }}>
-                <div style={{ fontSize: 12, fontWeight: 500, color: GRAY_M, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Deals (first 5)</div>
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                    <thead>
-                      <tr>
-                        {dealsColumns.map((c) => (
-                          <th key={c.key} style={{ textAlign: "left", padding: "6px 8px", borderBottom: "1px solid #e5e3db", color: GRAY_M, fontWeight: 500 }}>{c.label}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {parsedDeals.slice(0, 5).map((row, i) => (
-                        <tr key={i} style={{ borderBottom: "0.5px solid #e5e3db" }}>
-                          {dealsColumns.map((c) => (
-                            <td key={c.key} style={{ padding: "6px 8px" }}>{row[c.key] ?? "—"}</td>
+              <div style={{ fontSize: 12, color: GRAY_M, marginBottom: 12 }}>
+                Sheets found: {parseResult.summary.sheets.join(", ")}
+              </div>
+
+              {parseResult.data && (
+                <>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: GRAY_M, textTransform: "uppercase", marginBottom: 8 }}>Active Deals Preview</div>
+                  <div style={{ overflowX: "auto", marginBottom: 20 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                      <thead>
+                        <tr>
+                          {["Company", "Stage", "State", "Revenue", "Days", "Health", "Status"].map((h) => (
+                            <th key={h} style={{ textAlign: "left", padding: "6px 8px", borderBottom: "1px solid #e5e3db", color: GRAY_M, fontWeight: 500 }}>{h}</th>
                           ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+                      </thead>
+                      <tbody>
+                        {parseResult.data.deals.slice(0, 8).map((d, i) => (
+                          <tr key={i} style={{ borderBottom: "0.5px solid #e5e3db" }}>
+                            <td style={{ padding: "6px 8px", fontWeight: 500 }}>{d.company}</td>
+                            <td style={{ padding: "6px 8px" }}>{d.stage}</td>
+                            <td style={{ padding: "6px 8px" }}>{d.state}</td>
+                            <td style={{ padding: "6px 8px" }}>{d.rev ? `$${d.rev}M` : "—"}</td>
+                            <td style={{ padding: "6px 8px" }}>{d.days ?? "—"}</td>
+                            <td style={{ padding: "6px 8px", color: d.health === "on-track" ? GREEN : d.health === "at-risk" ? RED : AMBER }}>{d.health}</td>
+                            <td style={{ padding: "6px 8px", color: GRAY_M, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.status}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {parseResult.data.deals.length > 8 && (
+                      <div style={{ fontSize: 12, color: GRAY_M, padding: "8px 0" }}>... and {parseResult.data.deals.length - 8} more deals</div>
+                    )}
+                  </div>
 
-              <div style={{ display: "flex", gap: 12 }}>
+                  {parseResult.data.meta?.kpis && (
+                    <>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: GRAY_M, textTransform: "uppercase", marginBottom: 8 }}>Computed KPIs</div>
+                      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>
+                        {[
+                          { label: "Acquired", value: parseResult.data.meta.kpis.acquired },
+                          { label: "Under LOI", value: parseResult.data.meta.kpis.underLoi },
+                          { label: "Projected", value: parseResult.data.meta.kpis.projected },
+                          { label: "Full Year Budget", value: parseResult.data.meta.kpis.fullYear },
+                          { label: "Active Pipeline", value: parseResult.data.meta.kpis.activePipeline },
+                        ].map((k) => (
+                          <div key={k.label} style={{ background: "#f8f7f4", borderRadius: 8, padding: "8px 14px" }}>
+                            <div style={{ fontSize: 11, color: GRAY_M }}>{k.label}</div>
+                            <div style={{ fontSize: 16, fontWeight: 500 }}>{k.value}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+
+              <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
                 <button
                   onClick={handlePublish}
-                  disabled={publishing || parseErrors.length > 0}
+                  disabled={publishing || hasErrors || !parseResult.data}
                   style={{
                     padding: "10px 24px",
-                    background: parseErrors.length > 0 ? GRAY_M : BLUE,
+                    background: (hasErrors || !parseResult.data) ? GRAY_M : BLUE,
                     color: "#fff",
                     border: "none",
                     borderRadius: 6,
                     fontSize: 14,
                     fontWeight: 500,
-                    cursor: parseErrors.length > 0 ? "not-allowed" : "pointer",
+                    cursor: (hasErrors || !parseResult.data) ? "not-allowed" : "pointer",
                     opacity: publishing ? 0.6 : 1,
                   }}
                 >
                   {publishing ? "Publishing..." : "Publish to Dashboard"}
                 </button>
                 <div style={{ fontSize: 12, color: GRAY_M, alignSelf: "center" }}>
-                  {parseErrors.length > 0 ? "Fix validation errors first" : "This will replace the current dashboard data"}
+                  {hasErrors ? "Fix errors first" : warnings.length > 0 ? "Missing sheets will use existing defaults" : "This will replace the current dashboard data"}
                 </div>
               </div>
             </div>
@@ -312,7 +342,7 @@ export default function AdminPage() {
       {activeTab === "revisions" && (
         <div>
           {revisions.length === 0 ? (
-            <div style={{ color: GRAY_M, fontSize: 13, padding: 24, textAlign: "center" }}>No revisions yet. Upload data to create the first revision.</div>
+            <div style={{ color: GRAY_M, fontSize: 13, padding: 24, textAlign: "center" }}>No revisions yet.</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {revisions.map((rev, i) => (
