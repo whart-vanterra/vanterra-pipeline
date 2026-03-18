@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { list, head } from "@vercel/blob"
+import { list } from "@vercel/blob"
 import { getDefaultData } from "../../../lib/data"
 
 export async function GET(request) {
@@ -22,7 +22,10 @@ export async function GET(request) {
     if (blobToken) {
       const { blobs } = await list({ prefix: "data.json", limit: 1, token: blobToken })
       if (blobs.length > 0) {
-        const res = await fetch(blobs[0].url)
+        // Private blobs require token-authenticated download
+        const res = await fetch(blobs[0].downloadUrl, {
+          headers: { Authorization: `Bearer ${blobToken}` },
+        })
         if (res.ok) {
           const data = await res.json()
           return NextResponse.json(data)

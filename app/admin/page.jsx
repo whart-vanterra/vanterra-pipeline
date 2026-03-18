@@ -132,11 +132,13 @@ export default function AdminPage() {
     }
   }
 
-  async function handleRollback(revisionUrl) {
+  async function handleRollback(pathname) {
     setRollingBack(true)
     setError(null)
     try {
-      const res = await fetch(revisionUrl)
+      const res = await fetch(`/api/upload?fetch=${encodeURIComponent(pathname)}`, {
+        headers: { Authorization: `Bearer ${key}` },
+      })
       if (!res.ok) throw new Error("Failed to fetch revision")
       const envelope = await res.json()
       // Envelope format: { data, label, timestamp } — extract data
@@ -182,11 +184,12 @@ export default function AdminPage() {
     }
   }
 
-  async function handleUpdateLabel(revisionUrl, pathname) {
+  async function handleUpdateLabel(pathname) {
     setError(null)
     try {
-      // Fetch current revision, update label, re-save to same path
-      const res = await fetch(revisionUrl)
+      const res = await fetch(`/api/upload?fetch=${encodeURIComponent(pathname)}`, {
+        headers: { Authorization: `Bearer ${key}` },
+      })
       if (!res.ok) throw new Error("Failed to fetch revision")
       const envelope = await res.json()
       const revData = envelope.data || envelope
@@ -432,7 +435,7 @@ export default function AdminPage() {
                             style={{ flex: 1, maxWidth: 300, padding: "4px 8px", border: "1px solid #d3d1c7", borderRadius: 4, fontSize: 12, fontFamily: "inherit" }}
                             onKeyDown={(e) => { if (e.key === "Enter") handleUpdateLabel(rev.url, rev.pathname); if (e.key === "Escape") setEditingLabel(null) }}
                           />
-                          <button onClick={() => handleUpdateLabel(rev.url, rev.pathname)} style={{ padding: "4px 10px", background: BLUE, color: "#fff", border: "none", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>Save</button>
+                          <button onClick={() => handleUpdateLabel(rev.pathname)} style={{ padding: "4px 10px", background: BLUE, color: "#fff", border: "none", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>Save</button>
                           <button onClick={() => setEditingLabel(null)} style={{ padding: "4px 10px", background: "transparent", border: "1px solid #d3d1c7", borderRadius: 4, fontSize: 12, cursor: "pointer", color: GRAY_M }}>Cancel</button>
                         </div>
                       ) : (
@@ -452,7 +455,7 @@ export default function AdminPage() {
                     <div style={{ display: "flex", gap: 8, marginLeft: 12 }}>
                       {i > 0 && (
                         <button
-                          onClick={() => handleRollback(rev.url)}
+                          onClick={() => handleRollback(rev.pathname)}
                           disabled={rollingBack}
                           style={{ padding: "6px 14px", background: "transparent", border: `1px solid ${BLUE}`, color: BLUE, borderRadius: 6, fontSize: 12, cursor: "pointer", opacity: rollingBack ? 0.6 : 1, whiteSpace: "nowrap" }}
                         >

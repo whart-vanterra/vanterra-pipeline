@@ -54,7 +54,7 @@ export async function POST(request) {
   try {
     // Write current data.json
     await put("data.json", JSON.stringify(data), {
-      access: "public",
+      access: "private",
       addRandomSuffix: false,
       token: blobToken,
     })
@@ -69,14 +69,14 @@ export async function POST(request) {
       } catch { /* if delete fails, still write the new one */ }
 
       await put(replaceRevision, JSON.stringify(envelope), {
-        access: "public",
+        access: "private",
         addRandomSuffix: false,
         token: blobToken,
       })
     } else {
       // New revision
       await put(`revisions/${timestamp}.json`, JSON.stringify(envelope), {
-        access: "public",
+        access: "private",
         addRandomSuffix: false,
         token: blobToken,
       })
@@ -99,7 +99,7 @@ export async function POST(request) {
   }
 }
 
-// GET /api/upload — list revisions
+// GET /api/upload — list revisions, or fetch a specific revision by ?pathname=
 export async function GET(request) {
   if (!verifyAdmin(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -110,6 +110,28 @@ export async function GET(request) {
     return NextResponse.json({ revisions: [] })
   }
 
+  const { searchParams } = new URL(request.url)
+  const fetchPathname = searchParams.get("fetch")
+
+  // Fetch a specific revision's data (used by rollback/label-edit)
+  if (fetchPathname) {
+    try {
+      const { blobs } = await list({ prefix: fetchPathname, limit: 1, token: blobToken })
+      if (blobs.length === 0) {
+        return NextResponse.json({ error: "Revision not found" }, { status: 404 })
+      }
+      const res = await fetch(blobs[0].downloadUrl, {
+        headers: { Authorization: `Bearer ${blobToken}` },
+      })
+      if (!res.ok) throw new Error("Failed to download revision")
+      const envelope = await res.json()
+      return NextResponse.json(envelope)
+    } catch (err) {
+      return NextResponse.json({ error: `Failed to fetch revision: ${err.message}` }, { status: 500 })
+    }
+  }
+
+  // List all revisions
   try {
     const { blobs } = await list({ prefix: "revisions/", token: blobToken })
     const revisions = await Promise.all(
@@ -117,17 +139,17 @@ export async function GET(request) {
         .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))
         .slice(0, MAX_REVISIONS)
         .map(async (b) => {
-          // Try to read label from the envelope
           let label = ""
           try {
-            const res = await fetch(b.url)
+            const res = await fetch(b.downloadUrl, {
+              headers: { Authorization: `Bearer ${blobToken}` },
+            })
             if (res.ok) {
               const envelope = await res.json()
               label = envelope.label || ""
             }
           } catch { /* ignore */ }
           return {
-            url: b.url,
             pathname: b.pathname,
             timestamp: b.uploadedAt,
             size: b.size,
