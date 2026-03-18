@@ -54,7 +54,6 @@ export async function POST(request) {
   try {
     // Write current data.json
     await put("data.json", JSON.stringify(data), {
-      access: "private",
       addRandomSuffix: false,
       token: blobToken,
     })
