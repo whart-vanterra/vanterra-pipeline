@@ -146,7 +146,7 @@ export default function AdminPage() {
       const uploadRes = await fetch("/api/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-        body: JSON.stringify({ ...revData, label: `Rollback: ${envelope.label || "unnamed"}` }),
+        body: JSON.stringify({ ...revData, restoreOnly: true }),
       })
       if (uploadRes.ok) {
         setPublished(new Date().toISOString())

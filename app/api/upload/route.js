@@ -33,7 +33,7 @@ export async function POST(request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const { deals, nurture, meta, label, replaceRevision } = body
+  const { deals, nurture, meta, label, replaceRevision, restoreOnly } = body
   if (!deals || !Array.isArray(deals)) {
     return NextResponse.json({ error: "Missing or invalid deals array" }, { status: 400 })
   }
@@ -59,6 +59,11 @@ export async function POST(request) {
       allowOverwrite: true,
       token: blobToken,
     })
+
+    // Restore just updates data.json — no new revision
+    if (restoreOnly) {
+      return NextResponse.json({ success: true, timestamp })
+    }
 
     if (replaceRevision) {
       // Replace an existing revision — delete old, write to same path
