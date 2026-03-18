@@ -54,6 +54,7 @@ export async function POST(request) {
   try {
     // Write current data.json
     await put("data.json", JSON.stringify(data), {
+      access: "public",
       addRandomSuffix: false,
       token: blobToken,
     })
@@ -68,14 +69,14 @@ export async function POST(request) {
       } catch { /* if delete fails, still write the new one */ }
 
       await put(replaceRevision, JSON.stringify(envelope), {
-        access: "private",
+        access: "public",
         addRandomSuffix: false,
         token: blobToken,
       })
     } else {
       // New revision
       await put(`revisions/${timestamp}.json`, JSON.stringify(envelope), {
-        access: "private",
+        access: "public",
         addRandomSuffix: false,
         token: blobToken,
       })
